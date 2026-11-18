@@ -25,18 +25,24 @@ VIEWS = {
         "title": "Falak",
         "title_ar": "فلك",
         "buttons": ("M", "IAX"),
+        # Windows minimize into their icon like a genie (Magic Lamp).
+        "effects": {"magiclamp": True, "squash": False, "sheet": False},
     },
     "mac": {
         "package": "org.falak.mac.desktop",
         "title": "Mac-like",
         "title_ar": "على طريقة ماك",
         "buttons": ("XIA", ""),
+        # Magic Lamp minimize, and dialogs slide down from the title bar (Sheet).
+        "effects": {"magiclamp": True, "squash": False, "sheet": True},
     },
     "windows": {
         "package": "org.falak.windows.desktop",
         "title": "Windows-like",
         "title_ar": "على طريقة ويندوز",
         "buttons": ("M", "IAX"),
+        # Windows-style shrink into the taskbar (Squash).
+        "effects": {"magiclamp": False, "squash": True, "sheet": False},
     },
 }
 
@@ -49,7 +55,11 @@ ALIASES = {
     "windows-like": "windows",
 }
 
-TASK_PLUGINS = ("org.kde.plasma.icontasks", "org.kde.plasma.taskmanager")
+TASK_PLUGINS = (
+    "org.kde.plasma.icontasks",
+    "org.kde.plasma.taskmanager",
+    "com.github.mattanis.macosdock",  # Falak Dock (Mac-like view)
+)
 
 SYSTEM_POLICY = "/etc/falak/appearance.conf"
 CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
@@ -231,6 +241,32 @@ def set_window_buttons(left, right):
     )
 
 
+def kwin_dbus(method, *args):
+    return run(
+        ["gdbus", "call", "--session", "--dest", "org.kde.KWin", "--object-path", "/Effects",
+         "--method", f"org.kde.kwin.Effects.{method}", *args],
+        check=False,
+    )
+
+
+def set_effects(effects):
+    """Turn KWin effects on/off for this user and apply them right away."""
+    tool = shutil.which("kwriteconfig6") or shutil.which("kwriteconfig5")
+    if not tool:
+        print("falak-appearance: kwriteconfig6 not found; animations unchanged", file=sys.stderr)
+        return
+    for name, enabled in effects.items():
+        run([tool, "--file", "kwinrc", "--group", "Plugins", "--key", f"{name}Enabled",
+             "--type", "bool", "true" if enabled else "false"])
+    # Unload first so two minimize animations never run together.
+    for name, enabled in effects.items():
+        if not enabled:
+            kwin_dbus("unloadEffect", name)
+    for name, enabled in effects.items():
+        if enabled:
+            kwin_dbus("loadEffect", name)
+
+
 def apply_global_theme(package):
     tool = shutil.which("plasma-apply-lookandfeel") or shutil.which("lookandfeeltool")
     if tool:
@@ -288,6 +324,7 @@ def cmd_apply(args):
     print(f"Switching to the {info['title']} view...")
     apply_global_theme(info["package"])
     set_window_buttons(*info["buttons"])
+    set_effects(info["effects"])
 
     if pinned:
         restore_pinned_apps(pinned)

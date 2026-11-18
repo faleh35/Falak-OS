@@ -27,15 +27,30 @@ if an update goes wrong.
 
 Images are published as `ghcr.io/faleh35/<image>`.
 
+### Apps built in
+
+Each edition's main apps are part of the image, so they are ready on first boot without downloading
+anything, and they update together with the system.
+
+| Set | Apps | Editions |
+|---|---|---|
+| Essentials | Firefox, Okular (PDF), Gwenview (images), KCalc, Ark (archives), Kate (text), Haruna (video), Elisa (music), Spectacle (screenshots), Filelight | All |
+| Business | ONLYOFFICE, Thunderbird, Remmina (RDP/VNC), PDF Arranger, KeePassXC, Skanpage, OpenVPN/OpenConnect | Business, Corporate, Full |
+| Creative and developer | LibreOffice, GIMP, Inkscape, Krita, Kdenlive, OBS Studio, VSCodium, VLC (when Fedora carries it) | Full |
+| Gaming | Steam, Lutris, MangoHud, GameMode (from Bazzite) | Gaming, Full |
+
+Heroic, ProtonUp-Qt and Discord are published only as Flatpaks, so the Gaming and Full editions still
+install those three from Flathub on first boot.
+
 ## The three desktop views
 
 Every user picks a view on first login and can switch any time from **Desktop View** in the app menu.
 
-| View | Layout | Window buttons |
-|---|---|---|
-| **Falak** (signature) | One floating bar at the bottom: menu, workspaces, apps, tray, clock | Right |
-| **Mac-like** | Top bar with the app menu + a floating dock that moves out of the way | Left |
-| **Windows-like** | Full taskbar with a centered Start menu | Right |
+| View | Layout | Window buttons | Minimize animation |
+|---|---|---|---|
+| **Falak** (signature) | One floating bar at the bottom: menu, workspaces, apps, tray, clock | Right | Magic Lamp (genie) |
+| **Mac-like** | Top bar with the app menu + a floating, magnifying dock (Falak Dock) that moves out of the way | Left | Magic Lamp; dialogs slide from the title bar |
+| **Windows-like** | Full taskbar with a centered Start menu | Right | Squash, like Windows |
 
 Each view is a KDE Plasma Global Theme in `files/system/usr/share/plasma/look-and-feel/`.
 Switching is done by `falak-appearance`, which also keeps the user's pinned apps:
@@ -65,6 +80,7 @@ files/
     usr/bin/falak-welcome        first-login picker (English/Arabic)
     usr/libexec/falak-firstboot  applies the account and settings from the FalakOS Installer
     usr/share/plasma/look-and-feel/org.falak.{native,mac,windows}.desktop
+    usr/share/plasma/plasmoids/com.github.mattanis.macosdock   Falak Dock (GPL-2.0+, see its SOURCE.md)
     usr/share/wallpapers/Falak   original wallpaper (light + dark)
     etc/xdg/kxkbrc               English + Arabic keyboard, Alt+Shift to switch
     etc/fonts/conf.d/60-falak-arabic.conf
@@ -219,5 +235,7 @@ download the RPMs into the repo and install them with a `dnf` module in `common-
 - **The FalakOS name and logo** are trademarks and aren't covered by either license.
   Forks are welcome but must use their own name and logo. See `TRADEMARKS.md`.
 - Built on BlueBuild, Universal Blue (Bazzite, ublue main), Fedora and KDE Plasma, each under its own license.
+- **Falak Dock** (`files/system/usr/share/plasma/plasmoids/com.github.mattanis.macosdock`) is Matt Anis's
+  dock for Plasma 6, GPL-2.0-or-later, included with its license; only its display name was changed.
 - "Mac-like" and "Windows-like" describe layout only. FalakOS ships no Apple or Microsoft logos,
   icons, fonts or wallpapers. macOS and Windows are trademarks of their owners.

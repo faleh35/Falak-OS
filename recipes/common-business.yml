@@ -1,22 +1,21 @@
 ---
 # yaml-language-server: $schema=https://schema.blue-build.org/module-list-v1.json
 # Business apps: shared by Business, Corporate and Full.
+# Built into the image, so they are ready on first boot without downloading.
 modules:
-  - type: default-flatpaks
-    configurations:
-      - scope: system
-        notify: true
-        install:
-          - org.onlyoffice.desktopeditors # Word/Excel/PowerPoint compatible
-          - org.mozilla.Thunderbird # mail; native Exchange (EWS) support
-          - org.remmina.Remmina # remote desktop (RDP/VNC)
-          - org.kde.okular # PDF viewer + annotations
-          - com.github.jeromerobert.pdfarranger # merge/split PDFs
-
-  # Disk encryption + VPN tooling (most already exist in the base; dnf skips those).
   - type: dnf
     install:
       packages:
+        # ONLYOFFICE Desktop Editors (Word/Excel/PowerPoint compatible), official RPM.
+        - https://github.com/ONLYOFFICE/DesktopEditors/releases/latest/download/onlyoffice-desktopeditors.x86_64.rpm
+        - thunderbird # mail and calendar; Exchange via EWS
+        - remmina # remote desktop
+        - remmina-plugins-rdp # Windows Remote Desktop (RDP)
+        - remmina-plugins-vnc # VNC
+        - pdfarranger # merge, split and reorder PDFs
+        - keepassxc # password manager
+        - skanpage # scanning documents
+        # Disk encryption + VPN tooling (most already exist in the base; dnf skips those).
         - cryptsetup
         - NetworkManager-openvpn
         - NetworkManager-openconnect

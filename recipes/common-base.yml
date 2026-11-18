@@ -1,7 +1,8 @@
 ---
 # yaml-language-server: $schema=https://schema.blue-build.org/module-list-v1.json
 # FalakOS base layer: shared by EVERY edition.
-# Branding, the three desktop views, the first-login welcome, Arabic support.
+# Branding, the three desktop views, the first-login welcome, Arabic support,
+# and the essential apps (built into the image, so nothing downloads on first boot).
 modules:
   # Copies files/system/* into the image root (/).
   - type: files
@@ -9,11 +10,22 @@ modules:
       - source: system
         destination: /
 
-  # Tools the FalakOS scripts rely on.
   - type: dnf
     install:
       packages:
         - kdialog # first-login welcome picker dialogs
+        # Essential apps for every edition.
+        - firefox # web browser
+        - firefox-langpacks # Firefox in Arabic and other languages
+        - okular # PDF and document viewer
+        - gwenview # image viewer
+        - kcalc # calculator
+        - ark # zip and other archives
+        - kate # text editor
+        - haruna # video player
+        - elisa-player # music player
+        - spectacle # screenshots and screen recording
+        - filelight # see what fills your disk
 
   # Arabic-first fonts + an open UI font (no proprietary Apple/Microsoft fonts).
   - type: fonts
@@ -25,17 +37,7 @@ modules:
         - Tajawal
         - Amiri
 
-  # Apps every edition gets (installed on first boot from Flathub).
-  - type: default-flatpaks
-    configurations:
-      - scope: system
-        notify: true
-        install:
-          - org.mozilla.firefox
-          - org.kde.kcalc
-          - org.kde.gwenview
-
-  # Build-time setup: default look, permissions, sanity checks.
+  # Build-time setup: default look, animations, permissions, sanity checks.
   - type: script
     scripts:
       - falak-defaults.sh

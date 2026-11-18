@@ -1,7 +1,10 @@
 ---
 # yaml-language-server: $schema=https://schema.blue-build.org/module-list-v1.json
 # Gaming extras on top of Bazzite (which already ships Steam, Lutris,
-# MangoHud, GameMode and the GPU drivers).
+# MangoHud, GameMode and the GPU drivers inside the image).
+#
+# These three are published only as Flatpaks (no Fedora package), so they are
+# still installed from Flathub on first boot.
 modules:
   - type: default-flatpaks
     configurations:

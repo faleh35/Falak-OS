@@ -1,16 +1,29 @@
 ---
 # yaml-language-server: $schema=https://schema.blue-build.org/module-list-v1.json
 # Extra creative and developer apps for the Full edition.
+# Built into the image, so they are ready on first boot without downloading.
 modules:
-  - type: default-flatpaks
-    configurations:
-      - scope: system
-        notify: true
-        install:
-          - org.videolan.VLC
-          - com.obsproject.Studio
-          - org.kde.kdenlive
-          - org.gimp.GIMP
-          - org.inkscape.Inkscape
-          - com.vscodium.codium
-          - org.libreoffice.LibreOffice
+  - type: dnf
+    repos:
+      cleanup: true # the VSCodium repo is only needed while building
+      files:
+        - vscodium.repo # files/dnf/vscodium.repo
+    install:
+      packages:
+        - libreoffice-writer
+        - libreoffice-calc
+        - libreoffice-impress
+        - libreoffice-langpack-ar
+        - gimp # photo editing
+        - inkscape # vector graphics
+        - krita # digital painting
+        - kdenlive # video editing
+        - obs-studio # streaming and screen recording
+        - codium # VSCodium code editor
+
+  # VLC: added when the Fedora release carries it (skipped otherwise; Haruna is the default player).
+  - type: dnf
+    install:
+      skip-unavailable: true
+      packages:
+        - vlc

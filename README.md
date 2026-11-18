@@ -117,11 +117,16 @@ images really come from FalakOS. You can do this from Windows.
 drive, and unplug any other drives during the install so nothing gets overwritten. With Secure Boot
 on, Bazzite-based editions ask you to enroll their key on first boot; follow the on-screen steps.
 
-**Make an installer ISO** (on Linux or WSL2 with podman, as root):
+**Make an installer ISO on GitHub** (no Linux needed): *Actions → build-iso → Run workflow*,
+pick the edition, and download the ISO from the finished run (it's kept for 7 days).
+The edition's image must be public.
+
+Or on Linux / WSL2 with podman, as root:
 ```bash
 sudo bluebuild generate-iso --iso-name falakos-business.iso image ghcr.io/faleh35/falakos-business
 ```
 ISOs are larger than GitHub's 2 GB release limit, so host them elsewhere (SourceForge is common for distros).
+With Secure Boot on, the installer asks you to enroll a key on first boot; the password is `universalblue`.
 
 Every installed FalakOS machine updates itself from your images. Push a change, the image rebuilds,
 and machines pick it up on their next update.

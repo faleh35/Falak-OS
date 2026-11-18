@@ -6,7 +6,7 @@ set -euo pipefail
 echo "== FalakOS: build-time defaults =="
 
 # 1) Executable bits. Git on Windows can drop them, so set them here.
-chmod 0755 /usr/bin/falak-appearance /usr/bin/falak-welcome
+chmod 0755 /usr/bin/falak-appearance /usr/bin/falak-welcome /usr/libexec/falak-firstboot
 
 # 2) Make the Falak view the default look for brand-new users.
 #    (Each user still picks their own view on first login.)
@@ -23,6 +23,10 @@ for view in native mac windows; do
     test -f "${pkg}/metadata.json" || { echo "Missing ${pkg}/metadata.json"; exit 1; }
     test -f "${pkg}/contents/layouts/org.kde.plasma.desktop-layout.js" || { echo "Missing layout for ${view}"; exit 1; }
 done
+
+# 3b) The first-boot service that finishes installs made with the FalakOS Installer.
+test -f /usr/lib/systemd/system/falak-firstboot.service || { echo "Missing falak-firstboot.service"; exit 1; }
+python3 -c "import ast; ast.parse(open('/usr/libexec/falak-firstboot').read())"
 
 # 4) Refresh the icon cache so the FalakOS logo shows up everywhere.
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then

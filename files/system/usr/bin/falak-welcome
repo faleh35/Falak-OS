@@ -2,13 +2,55 @@
 # falak-welcome: first-login picker for the desktop view.
 #   falak-welcome          runs once per user (autostart), then stays quiet
 #   falak-welcome --again  shows the picker again (used by the "Desktop View" menu entry)
+#
+# If the FalakOS Installer already asked which view to use, it is applied
+# without showing the picker. On company computers whose setup was chosen in
+# the installer but isn't finished yet, administrators are offered to finish it.
 set -u
 
 STATE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/falak"
 DONE_FILE="$STATE_DIR/welcome-done"
+INITIAL_VIEW_FILE="$STATE_DIR/initial-view"
+ENROLL_PENDING="/etc/falak/enroll-pending.json"
+
+# Text in Arabic when the session language is Arabic, English otherwise.
+if [[ "${LANGUAGE:-${LANG:-}}" == ar* ]]; then
+    TITLE="مرحبًا بك في FalakOS"
+    TEXT="كُلٌّ فِي فَلَكٍ يَسْبَحُونَ\n\nاختر شكل سطح المكتب.\nيمكنك تغييره في أي وقت من «شكل سطح المكتب» في القائمة."
+    OPT_FALAK="فلك: الشريط العائم الخاص بـ FalakOS"
+    OPT_MAC="على طريقة ماك: شريط علوي ورصيف تطبيقات"
+    OPT_WIN="على طريقة ويندوز: شريط مهام وقائمة ابدأ"
+    MSG_DONE="سطح المكتب جاهز."
+    MSG_FAIL="تعذّر تغيير الشكل. جرّب مرة أخرى من «شكل سطح المكتب» في القائمة."
+    ENROLL_TITLE="إعداد الشركة"
+    ENROLL_TEXT="لم يكتمل ربط هذا الجهاز بالشركة بعد.\nتأكد من الاتصال بالإنترنت، ثم اختر «نعم» لإكماله الآن.\n\nستحتاج كلمة مرورك، وقد يُطلب منك حساب مسموح له بضم الأجهزة."
+else
+    TITLE="Welcome to FalakOS"
+    TEXT="All in an orbit are swimming.\n\nChoose how your desktop looks.\nYou can change it any time from \"Desktop View\" in the menu."
+    OPT_FALAK="Falak: FalakOS's own floating bar"
+    OPT_MAC="Mac-like: top bar and a dock"
+    OPT_WIN="Windows-like: taskbar and Start menu"
+    MSG_DONE="Your desktop is ready."
+    MSG_FAIL="Couldn't change the view. Try again from \"Desktop View\" in the menu."
+    ENROLL_TITLE="Company setup"
+    ENROLL_TEXT="This computer isn't joined to your company yet.\nMake sure you're connected to the internet, then choose Yes to finish now.\n\nYou'll need your password, and you may be asked for an account that is allowed to join computers."
+fi
+
+# ---- company setup chosen in the installer (administrators only)
+offer_enrollment() {
+    [[ -f "$ENROLL_PENDING" ]] || return 0
+    [[ -x /usr/libexec/falak-enroll-pending ]] || return 0
+    id -nG | tr ' ' '\n' | grep -qx wheel || return 0
+    command -v konsole >/dev/null 2>&1 || return 0
+    if kdialog --title "$ENROLL_TITLE" --yesno "$(echo -e "$ENROLL_TEXT")"; then
+        konsole --hold -e sudo /usr/libexec/falak-enroll-pending --interactive &
+    fi
+}
 
 if [[ "${1:-}" == "--again" ]]; then
-    rm -f "$DONE_FILE"
+    rm -f "$DONE_FILE" "$INITIAL_VIEW_FILE"
+else
+    offer_enrollment
 fi
 [[ -f "$DONE_FILE" ]] && exit 0
 mkdir -p "$STATE_DIR"
@@ -20,26 +62,24 @@ default="${default:-falak}"
 # Corporate: IT locked the view, so apply it without asking.
 if [[ -n "$locked" ]]; then
     falak-appearance apply "$locked" && touch "$DONE_FILE"
+    rm -f "$INITIAL_VIEW_FILE"
     exit 0
 fi
 
-# Text in Arabic when the session language is Arabic, English otherwise.
-if [[ "${LANGUAGE:-${LANG:-}}" == ar* ]]; then
-    TITLE="مرحبًا بك في FalakOS"
-    TEXT="كُلٌّ فِي فَلَكٍ يَسْبَحُونَ\n\nاختر شكل سطح المكتب.\nيمكنك تغييره في أي وقت من «شكل سطح المكتب» في القائمة."
-    OPT_FALAK="فلك: الشريط العائم الخاص بـ FalakOS"
-    OPT_MAC="على طريقة ماك: شريط علوي ورصيف تطبيقات"
-    OPT_WIN="على طريقة ويندوز: شريط مهام وقائمة ابدأ"
-    MSG_DONE="سطح المكتب جاهز."
-    MSG_FAIL="تعذّر تغيير الشكل. جرّب مرة أخرى من «شكل سطح المكتب» في القائمة."
-else
-    TITLE="Welcome to FalakOS"
-    TEXT="All in an orbit are swimming.\n\nChoose how your desktop looks.\nYou can change it any time from \"Desktop View\" in the menu."
-    OPT_FALAK="Falak: FalakOS's own floating bar"
-    OPT_MAC="Mac-like: top bar and a dock"
-    OPT_WIN="Windows-like: taskbar and Start menu"
-    MSG_DONE="Your desktop is ready."
-    MSG_FAIL="Couldn't change the view. Try again from \"Desktop View\" in the menu."
+# Picked in the installer: apply it without asking again.
+if [[ -f "$INITIAL_VIEW_FILE" ]]; then
+    initial="$(tr -d '[:space:]' < "$INITIAL_VIEW_FILE")"
+    case "$initial" in
+        falak|mac|windows)
+            if falak-appearance apply "$initial"; then
+                touch "$DONE_FILE"
+                rm -f "$INITIAL_VIEW_FILE"
+                kdialog --title "$TITLE" --passivepopup "$MSG_DONE" 6 &
+                exit 0
+            fi
+            ;;
+    esac
+    rm -f "$INITIAL_VIEW_FILE"
 fi
 
 state() { [[ "$1" == "$default" ]] && echo on || echo off; }

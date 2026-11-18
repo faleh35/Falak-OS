@@ -5,7 +5,12 @@ on:
   push:
     paths-ignore:
       - "**.md"
+      - "installer/**" # the installer app has its own workflow
+      - ".github/workflows/installer.yml"
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "installer/**"
   workflow_dispatch: # lets you start a build by hand from the Actions tab
 
 concurrency:

@@ -1,0 +1,19 @@
+[Unit]
+Description=FalakOS first-boot setup (account, language, time zone)
+Documentation=https://github.com/faleh35/Falak-OS
+# Only when the installer left its settings file and setup hasn't run yet.
+ConditionPathExists=|/boot/falak/firstboot.json
+ConditionPathExists=|/sysroot/boot/falak/firstboot.json
+ConditionPathExists=!/var/lib/falak/firstboot-done
+After=local-fs.target systemd-sysusers.service systemd-tmpfiles-setup.service
+RequiresMountsFor=/boot /var
+Before=display-manager.service systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/falak-firstboot
+RemainAfterExit=yes
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

@@ -25,9 +25,10 @@ modules:
 
   - type: script
     snippets:
-      - "chmod 0755 /usr/bin/falak-enroll"
+      - "chmod 0755 /usr/bin/falak-enroll /usr/libexec/falak-enroll-pending"
 
   - type: systemd
     system:
       enabled:
         - oddjobd.service # creates home folders on first domain login
+        - falak-enroll-pending.service # finishes the company setup chosen in the installer

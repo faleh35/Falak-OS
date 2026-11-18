@@ -1,0 +1,86 @@
+#!/usr/bin/python3
+"""falak-enroll-pending: finishes the company setup chosen in the FalakOS Installer.
+
+falak-firstboot leaves:
+  /etc/falak/enroll-pending.json   {"config": "https://...", "profile": "..."}
+  /etc/falak/enroll-otp            one-time join password from IT (root only, optional)
+
+  falak-enroll-pending                 boot service mode: joins only when a one-time
+                                       password is there (no questions possible)
+  falak-enroll-pending --interactive   from the desktop (sudo in a terminal): uses the
+                                       one-time password if there is one, otherwise
+                                       asks for an account allowed to join computers
+
+Both files are removed once the computer is enrolled.
+"""
+
+import json
+import os
+import subprocess
+import sys
+
+PENDING = "/etc/falak/enroll-pending.json"
+OTP_FILE = "/etc/falak/enroll-otp"
+
+
+def read_otp():
+    try:
+        with open(OTP_FILE, encoding="utf-8") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
+
+
+def enroll(config, profile, otp, interactive):
+    cmd = ["falak-enroll", "--config", config, "--profile", profile]
+    env = dict(os.environ)
+    if otp:
+        # Passed through the environment so it never shows in the process list.
+        env["FALAK_JOIN_OTP"] = otp
+    elif not interactive:
+        return False
+    stdin = None if interactive else subprocess.DEVNULL
+    return subprocess.run(cmd, env=env, stdin=stdin).returncode == 0
+
+
+def main(argv):
+    interactive = "--interactive" in argv
+    if os.geteuid() != 0:
+        print("falak-enroll-pending: run with sudo.", file=sys.stderr)
+        return 1
+    try:
+        with open(PENDING, encoding="utf-8") as handle:
+            pending = json.load(handle)
+    except FileNotFoundError:
+        print("Nothing to do: no company setup is waiting.")
+        return 0
+    except (OSError, ValueError) as err:
+        print(f"falak-enroll-pending: can't read {PENDING}: {err}", file=sys.stderr)
+        return 1
+
+    config = str(pending.get("config", ""))
+    profile = str(pending.get("profile", ""))
+    otp = read_otp()
+
+    done = enroll(config, profile, otp, interactive)
+    if not done and interactive and otp:
+        print("\nThe one-time password didn't work (it may have been used already).")
+        print("Sign in with an account that is allowed to join computers instead.\n")
+        done = enroll(config, profile, "", True)
+
+    if done:
+        for path in (OTP_FILE, PENDING):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+        return 0
+    if not interactive and not otp:
+        # Not an error: the user finishes it from the desktop.
+        print("Company setup needs a join account; it will be offered after sign-in.")
+        return 0
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

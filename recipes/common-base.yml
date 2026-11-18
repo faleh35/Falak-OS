@@ -39,3 +39,9 @@ modules:
   - type: script
     scripts:
       - falak-defaults.sh
+
+  # Applies the account, language and time zone chosen in the FalakOS Installer.
+  - type: systemd
+    system:
+      enabled:
+        - falak-firstboot.service

@@ -63,19 +63,23 @@ files/
   system/                copied into every image's root (/)
     usr/bin/falak-appearance     switches views, keeps pinned apps
     usr/bin/falak-welcome        first-login picker (English/Arabic)
+    usr/libexec/falak-firstboot  applies the account and settings from the FalakOS Installer
     usr/share/plasma/look-and-feel/org.falak.{native,mac,windows}.desktop
     usr/share/wallpapers/Falak   original wallpaper (light + dark)
     etc/xdg/kxkbrc               English + Arabic keyboard, Alt+Shift to switch
     etc/fonts/conf.d/60-falak-arabic.conf
   corporate/             copied into the Corporate image only
     usr/bin/falak-enroll
+    usr/libexec/falak-enroll-pending   finishes a company join chosen in the installer
     usr/share/falak/enroll/example-org.json
   scripts/falak-defaults.sh      build-time setup
+installer/               the FalakOS Installer (Flutter, English + Arabic), see installer/README.md
 iso/
   build-iso.sh           builds a branded installer ISO from a published image
   branding/              installer name, logo, colors (Anaconda theme + lorax template)
 .github/workflows/build.yml      builds all editions every day and on every push
 .github/workflows/build-iso.yml  builds an installer ISO on demand
+.github/workflows/installer.yml  checks, tests and builds the FalakOS Installer
 ```
 
 ## Get it building (one time)
@@ -132,6 +136,11 @@ sudo iso/build-iso.sh falakos-business faleh35 ./output
 ```
 ISOs are larger than GitHub's 2 GB release limit, so host them elsewhere (SourceForge is common for distros).
 With Secure Boot on, the installer asks you to enroll a key on first boot; the password is `universalblue`.
+
+**FalakOS's own installer** is a Flutter app in `installer/`: language, desktop view, disk
+(with TPM encryption), account, company setup, then `bootc install`. On Windows it runs in
+practice mode, so you can click through it safely; see [installer/README.md](installer/README.md).
+A live ISO that boots into it is the next step.
 
 Every installed FalakOS machine updates itself from your images. Push a change, the image rebuilds,
 and machines pick it up on their next update.
@@ -193,6 +202,8 @@ download the RPMs into the repo and install them with a `dnf` module in `common-
 
 - [ ] Decide what "Free" means (no-cost tier vs. fully open-source with no proprietary drivers)
 - [ ] Welcome and Desktop View app in Flutter, with live previews of the three views
+- [x] FalakOS Installer in Flutter (`installer/`)
+- [ ] Live ISO that boots into the FalakOS Installer (Titanoboa)
 - [ ] FalakOS color scheme, icon set and boot splash
 - [ ] Hijri calendar in the clock and an optional prayer times widget
 - [ ] Corporate: mail auto-setup from the company directory (Thunderbird / Microsoft 365 web apps)

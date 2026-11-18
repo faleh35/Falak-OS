@@ -1,0 +1,16 @@
+[Unit]
+Description=FalakOS company enrollment chosen in the installer
+Documentation=https://github.com/faleh35/Falak-OS
+ConditionPathExists=/etc/falak/enroll-pending.json
+ConditionPathExists=/etc/falak/enroll-otp
+Wants=network-online.target
+After=network-online.target falak-firstboot.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/falak-enroll-pending
+# Joining a directory can take a while on slow networks.
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,243 @@
+#!/usr/bin/python3
+"""falak-firstboot: applies the settings chosen in the FalakOS Installer.
+
+The installer leaves /boot/falak/firstboot.json on the new disk. On the first
+boot, before the login screen starts, this script (run by
+falak-firstboot.service, as root):
+
+  1. sets the computer name, language and time zone,
+  2. creates the user account (an administrator, in the wheel group),
+  3. remembers the desktop view the user picked, so the welcome dialog
+     applies it instead of asking again,
+  4. for company computers, queues the company enrollment
+     (see /usr/libexec/falak-enroll-pending),
+  5. deletes the settings file, because it holds the password hash.
+
+It never runs twice: /var/lib/falak/firstboot-done marks it as finished.
+"""
+
+import grp
+import json
+import os
+import pwd
+import re
+import shutil
+import subprocess
+import sys
+
+CANDIDATES = [
+    "/boot/falak/firstboot.json",
+    # No separate /boot partition: the file sits in the physical root.
+    "/sysroot/boot/falak/firstboot.json",
+]
+DONE_MARKER = "/var/lib/falak/firstboot-done"
+FALAK_ETC = "/etc/falak"
+ENROLL_PENDING = f"{FALAK_ETC}/enroll-pending.json"
+ENROLL_OTP = f"{FALAK_ETC}/enroll-otp"
+VIEWS = {"falak", "mac", "windows"}
+
+USERNAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,30}$")
+HOSTNAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+LOCALE_RE = re.compile(r"^[a-zA-Z_]+(\.[A-Za-z0-9-]+)?$")
+
+
+def log(message):
+    print(f"falak-firstboot: {message}", flush=True)
+
+
+def run(cmd, stdin_text=None, check=True):
+    result = subprocess.run(cmd, input=stdin_text, text=True, capture_output=True)
+    if check and result.returncode != 0:
+        raise RuntimeError(f"{cmd[0]} failed: {result.stderr.strip() or result.returncode}")
+    return result
+
+
+def find_payload():
+    for path in CANDIDATES:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def write_file(path, content, mode=0o644):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+
+
+# ------------------------------------------------------------------ system settings
+
+def set_hostname(name):
+    if not HOSTNAME_RE.match(name or ""):
+        log(f"skipping invalid computer name {name!r}")
+        return
+    if shutil.which("hostnamectl") and run(["hostnamectl", "hostname", name], check=False).returncode == 0:
+        return
+    write_file("/etc/hostname", name + "\n")
+
+
+def set_locale(locale):
+    if not LOCALE_RE.match(locale or ""):
+        log(f"skipping invalid locale {locale!r}")
+        return
+    # Written directly: localectl refuses locales it thinks are missing,
+    # and plasma falls back to English on its own if a translation is absent.
+    write_file("/etc/locale.conf", f"LANG={locale}\n")
+
+
+def set_timezone(zone):
+    zone_file = os.path.join("/usr/share/zoneinfo", zone or "")
+    if not zone or ".." in zone or not os.path.isfile(zone_file):
+        log(f"skipping unknown time zone {zone!r}")
+        return
+    tmp = "/etc/localtime.falak-tmp"
+    if os.path.lexists(tmp):
+        os.remove(tmp)
+    os.symlink(f"../usr/share/zoneinfo/{zone}", tmp)
+    os.replace(tmp, "/etc/localtime")
+
+
+# ------------------------------------------------------------------ the user
+
+def ensure_group_in_etc(name):
+    """Fedora Atomic keeps some groups in /usr/lib/group, where useradd can't edit them."""
+    with open("/etc/group", encoding="utf-8") as handle:
+        if any(line.startswith(f"{name}:") for line in handle):
+            return
+    try:
+        with open("/usr/lib/group", encoding="utf-8") as handle:
+            line = next((l for l in handle if l.startswith(f"{name}:")), None)
+    except OSError:
+        line = None
+    if line:
+        with open("/etc/group", "a", encoding="utf-8") as handle:
+            handle.write(line if line.endswith("\n") else line + "\n")
+
+
+def create_user(user):
+    name = user.get("name", "")
+    if not USERNAME_RE.match(name):
+        raise RuntimeError(f"invalid username {name!r}")
+    full_name = str(user.get("full_name", "")).replace(":", " ").replace("\n", " ").strip()
+    password_hash = str(user.get("password_hash", ""))
+    if not password_hash.startswith("$") or ":" in password_hash or "\n" in password_hash:
+        raise RuntimeError("the password hash is missing or malformed")
+
+    groups = []
+    if user.get("admin", True):
+        ensure_group_in_etc("wheel")
+        groups.append("wheel")
+
+    try:
+        pwd.getpwnam(name)
+        log(f"user {name} already exists; updating it")
+        if groups:
+            run(["usermod", "-aG", ",".join(groups), name])
+        if full_name:
+            run(["usermod", "-c", full_name, name])
+    except KeyError:
+        cmd = ["useradd", "-m", "-c", full_name]
+        if groups:
+            cmd += ["-G", ",".join(groups)]
+        run(cmd + [name])
+
+    # The hash goes through stdin so it never shows up in the process list.
+    run(["chpasswd", "-e"], stdin_text=f"{name}:{password_hash}\n")
+    return pwd.getpwnam(name)
+
+
+def remember_view(account, view):
+    if view not in VIEWS:
+        return
+    config_dir = os.path.join(account.pw_dir, ".config", "falak")
+    os.makedirs(config_dir, exist_ok=True)
+    path = os.path.join(config_dir, "initial-view")
+    write_file(path, view + "\n")
+    for p in (os.path.join(account.pw_dir, ".config"), config_dir, path):
+        os.chown(p, account.pw_uid, account.pw_gid)
+
+
+# ------------------------------------------------------------------ company
+
+def queue_enrollment(enroll):
+    config = str(enroll.get("config", "")).strip()
+    profile = str(enroll.get("profile", "")).strip()
+    if not config.startswith("https://") or not profile:
+        log("company setup is incomplete; skipping it")
+        return
+    if not shutil.which("falak-enroll"):
+        log("company setup was chosen, but this edition has no falak-enroll; skipping it")
+        return
+    write_file(ENROLL_PENDING, json.dumps({"config": config, "profile": profile}, indent=2) + "\n", 0o644)
+    otp = str(enroll.get("one_time_password", "")).strip()
+    if otp:
+        write_file(ENROLL_OTP, otp + "\n", 0o600)
+    log(f"company enrollment queued (profile {profile})")
+
+
+# ------------------------------------------------------------------ cleanup
+
+def remove_payload(path):
+    """Overwrites and deletes the settings file (it holds the password hash)."""
+    try:
+        size = os.path.getsize(path)
+        with open(path, "r+b") as handle:
+            handle.write(b"\0" * size)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.remove(path)
+        return
+    except OSError as err:
+        log(f"direct delete failed ({err}); retrying with a writable /sysroot")
+    # Without a separate /boot partition the file lives in /sysroot, which is
+    # read-only on ostree systems. Remount it writable only inside a private
+    # mount namespace, like ostree itself does.
+    physical = path if path.startswith("/sysroot/") else "/sysroot" + path
+    if os.path.exists(physical) and shutil.which("unshare"):
+        script = 'mount -o remount,rw /sysroot && { shred -u "$1" 2>/dev/null || rm -f "$1"; }'
+        run(["unshare", "-m", "--propagation", "private", "sh", "-c", script, "sh", physical], check=False)
+    if os.path.exists(path) or os.path.exists(physical):
+        log(f"WARNING: could not delete {path}")
+
+
+def main():
+    if os.geteuid() != 0:
+        print("falak-firstboot: must run as root", file=sys.stderr)
+        return 1
+    if os.path.exists(DONE_MARKER):
+        return 0
+    path = find_payload()
+    if not path:
+        log("no installer settings found; nothing to do")
+        return 0
+
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if payload.get("version") != 1:
+            raise RuntimeError(f"unsupported settings version {payload.get('version')!r}")
+
+        set_hostname(payload.get("hostname", ""))
+        set_locale(payload.get("locale", ""))
+        set_timezone(payload.get("timezone", ""))
+        account = create_user(payload.get("user") or {})
+        log(f"created user {account.pw_name}")
+        remember_view(account, payload.get("view", ""))
+        if payload.get("enroll"):
+            queue_enrollment(payload["enroll"])
+    except (OSError, ValueError, RuntimeError, KeyError) as err:
+        # Keep the file so the problem can be looked at; the login screen still starts.
+        log(f"ERROR: {err}")
+        return 1
+
+    remove_payload(path)
+    write_file(DONE_MARKER, "done\n")
+    log("first-boot setup finished")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

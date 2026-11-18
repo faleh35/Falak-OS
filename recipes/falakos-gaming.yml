@@ -1,0 +1,28 @@
+---
+# yaml-language-server: $schema=https://schema.blue-build.org/recipe-v1.json
+# Published as ghcr.io/faleh35/falakos-gaming
+name: falakos-gaming
+description: "FalakOS Gaming for AMD and Intel graphics, built on Bazzite."
+
+base-image: ghcr.io/ublue-os/bazzite
+image-version: stable
+
+modules:
+  - from-file: common-base.yml
+  - from-file: common-gaming.yml
+
+  - type: os-release
+    properties:
+      NAME: FalakOS
+      PRETTY_NAME: FalakOS Gaming
+      VARIANT: Gaming
+      VARIANT_ID: gaming
+      LOGO: falak-logo
+      HOME_URL: https://github.com/faleh35/Falak-OS
+
+  - type: script
+    snippets:
+      - "mkdir -p /usr/share/falak && echo gaming > /usr/share/falak/edition"
+
+  # Must stay last: installs the signing policy for this image.
+  - type: signing

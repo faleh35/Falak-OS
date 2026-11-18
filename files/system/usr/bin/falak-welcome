@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# falak-welcome: first-login picker for the desktop view.
+#   falak-welcome          runs once per user (autostart), then stays quiet
+#   falak-welcome --again  shows the picker again (used by the "Desktop View" menu entry)
+set -u
+
+STATE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/falak"
+DONE_FILE="$STATE_DIR/welcome-done"
+
+if [[ "${1:-}" == "--again" ]]; then
+    rm -f "$DONE_FILE"
+fi
+[[ -f "$DONE_FILE" ]] && exit 0
+mkdir -p "$STATE_DIR"
+
+locked="$(falak-appearance policy --get locked 2>/dev/null)"
+default="$(falak-appearance policy --get default 2>/dev/null)"
+default="${default:-falak}"
+
+# Corporate: IT locked the view, so apply it without asking.
+if [[ -n "$locked" ]]; then
+    falak-appearance apply "$locked" && touch "$DONE_FILE"
+    exit 0
+fi
+
+# Text in Arabic when the session language is Arabic, English otherwise.
+if [[ "${LANGUAGE:-${LANG:-}}" == ar* ]]; then
+    TITLE="مرحبًا بك في FalakOS"
+    TEXT="كُلٌّ فِي فَلَكٍ يَسْبَحُونَ\n\nاختر شكل سطح المكتب.\nيمكنك تغييره في أي وقت من «شكل سطح المكتب» في القائمة."
+    OPT_FALAK="فلك: الشريط العائم الخاص بـ FalakOS"
+    OPT_MAC="على طريقة ماك: شريط علوي ورصيف تطبيقات"
+    OPT_WIN="على طريقة ويندوز: شريط مهام وقائمة ابدأ"
+    MSG_DONE="سطح المكتب جاهز."
+    MSG_FAIL="تعذّر تغيير الشكل. جرّب مرة أخرى من «شكل سطح المكتب» في القائمة."
+else
+    TITLE="Welcome to FalakOS"
+    TEXT="All in an orbit are swimming.\n\nChoose how your desktop looks.\nYou can change it any time from \"Desktop View\" in the menu."
+    OPT_FALAK="Falak: FalakOS's own floating bar"
+    OPT_MAC="Mac-like: top bar and a dock"
+    OPT_WIN="Windows-like: taskbar and Start menu"
+    MSG_DONE="Your desktop is ready."
+    MSG_FAIL="Couldn't change the view. Try again from \"Desktop View\" in the menu."
+fi
+
+state() { [[ "$1" == "$default" ]] && echo on || echo off; }
+
+choice="$(kdialog --title "$TITLE" --geometry 560x380 \
+    --radiolist "$(echo -e "$TEXT")" \
+    falak   "$OPT_FALAK" "$(state falak)" \
+    mac     "$OPT_MAC"   "$(state mac)" \
+    windows "$OPT_WIN"   "$(state windows)")"
+
+# Closed without choosing: use the default view.
+[[ -z "$choice" ]] && choice="$default"
+
+if falak-appearance apply "$choice"; then
+    touch "$DONE_FILE"
+    kdialog --title "$TITLE" --passivepopup "$MSG_DONE" 6 &
+else
+    kdialog --title "$TITLE" --error "$MSG_FAIL"
+fi

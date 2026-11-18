@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>FalakOS</title>
+  <defs>
+    <linearGradient id="planet" x1="0.15" y1="0.1" x2="0.85" y2="0.95">
+      <stop offset="0" stop-color="#3EE0C8"/>
+      <stop offset="1" stop-color="#1D3B8F"/>
+    </linearGradient>
+  </defs>
+  <g transform="rotate(-25 32 32)">
+    <!-- orbit, back half (behind the planet) -->
+    <path d="M 4 32 A 28 10 0 0 1 60 32" fill="none" stroke="#F5B942" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+  </g>
+  <!-- planet -->
+  <circle cx="32" cy="32" r="15" fill="url(#planet)"/>
+  <g transform="rotate(-25 32 32)">
+    <!-- orbit, front half (over the planet) -->
+    <path d="M 4 32 A 28 10 0 0 0 60 32" fill="none" stroke="#F5B942" stroke-width="4" stroke-linecap="round"/>
+    <!-- moon on the orbit -->
+    <circle cx="53.4" cy="38.4" r="5" fill="#F5B942" stroke="#FFFFFF" stroke-width="1.5"/>
+  </g>
+</svg>

@@ -1,0 +1,8 @@
+# Arabic-first keyboard: English (US) + Arabic, switch with Alt+Shift.
+[Layout]
+LayoutList=us,ara
+VariantList=,
+DisplayNames=,
+Use=true
+ResetOldOptions=true
+Options=grp:alt_shift_toggle

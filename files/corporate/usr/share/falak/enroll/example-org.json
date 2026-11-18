@@ -1,0 +1,55 @@
+{
+  "organization": "Contoso",
+  "identity": {
+    "type": "ad",
+    "domain": "corp.contoso.com",
+    "computer_ou": "OU=FalakOS Laptops,DC=corp,DC=contoso,DC=com",
+    "allowed_groups": [
+      "Linux-Users"
+    ],
+    "admin_groups": [
+      "Linux-Admins"
+    ],
+    "short_usernames": true
+  },
+  "profiles": [
+    {
+      "id": "standard",
+      "name": "Standard",
+      "name_ar": "قياسي",
+      "description": "Office apps for everyone.",
+      "image": "",
+      "appearance": {
+        "default": "windows",
+        "locked": ""
+      }
+    },
+    {
+      "id": "management",
+      "name": "Management",
+      "name_ar": "الإدارة",
+      "description": "Adds the management apps and shares.",
+      "image": "ghcr.io/contoso-it/falakos-corporate-management:latest",
+      "image_signing_key": "https://it.contoso.com/falak/cosign.pub",
+      "admin_groups": [
+        "Linux-Admins",
+        "Managers-IT"
+      ],
+      "appearance": {
+        "default": "windows",
+        "locked": ""
+      }
+    },
+    {
+      "id": "kiosk",
+      "name": "Front desk",
+      "name_ar": "مكتب الاستقبال",
+      "description": "Shared front-desk PC with a fixed layout.",
+      "image": "",
+      "appearance": {
+        "default": "windows",
+        "locked": "windows"
+      }
+    }
+  ]
+}

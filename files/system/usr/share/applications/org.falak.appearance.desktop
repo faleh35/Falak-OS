@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Desktop View
+Name[ar]=شكل سطح المكتب
+GenericName=Switch desktop layout
+GenericName[ar]=تغيير شكل سطح المكتب
+Comment=Switch between the Falak, Mac-like and Windows-like views
+Comment[ar]=التبديل بين شكل فلك وشكل ماك وشكل ويندوز
+Exec=/usr/bin/falak-welcome --again
+Icon=falak-logo
+Terminal=false
+Categories=Settings;DesktopSettings;Qt;KDE;
+Keywords=layout;taskbar;dock;panel;mac;windows;appearance;
+Keywords[ar]=شكل;شريط;رصيف;لوحة;ماك;ويندوز;مظهر;

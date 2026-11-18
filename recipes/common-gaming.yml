@@ -1,0 +1,13 @@
+---
+# yaml-language-server: $schema=https://schema.blue-build.org/module-list-v1.json
+# Gaming extras on top of Bazzite (which already ships Steam, Lutris,
+# MangoHud, GameMode and the GPU drivers).
+modules:
+  - type: default-flatpaks
+    configurations:
+      - scope: system
+        notify: true
+        install:
+          - com.heroicgameslauncher.hgl # Epic / GOG / Amazon games
+          - net.davidotek.pupgui2 # ProtonUp-Qt: manage Proton-GE versions
+          - com.discordapp.Discord

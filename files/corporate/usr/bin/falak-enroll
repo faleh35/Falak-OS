@@ -1,0 +1,426 @@
+#!/usr/bin/env python3
+"""falak-enroll: join this FalakOS Corporate machine to a company, once.
+
+IT runs this one time per machine (usually right after installing):
+
+    sudo falak-enroll --config https://it.example.com/falak.json
+    sudo falak-enroll --config /path/to/org.json --profile management
+    sudo falak-enroll --config org.json --dry-run      # show what would happen
+
+What it does:
+  1. Loads the company config (see /usr/share/falak/enroll/example-org.json).
+  2. Lets IT pick one of the company's profiles (Standard, Management, ...).
+  3. Joins the company directory:
+       - Active Directory / Samba AD / FreeIPA through realmd + SSSD
+       - Microsoft Entra ID through Himmelblau (must be installed first)
+  4. Lets the allowed groups log in, gives admin groups sudo.
+  5. Writes the desktop view policy (/etc/falak/appearance.conf).
+  6. Switches the machine to the profile's own image, if the profile has one.
+
+After this, any allowed employee can sign in at the login screen with their
+company account. Nothing has to be set up again.
+"""
+
+import argparse
+import configparser
+import getpass
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+FALAK_ETC = "/etc/falak"
+APPEARANCE_CONF = f"{FALAK_ETC}/appearance.conf"
+SSSD_CONF = "/etc/sssd/sssd.conf"
+SUDOERS_FILE = "/etc/sudoers.d/50-falak-admins"
+HIMMELBLAU_CONF = "/etc/himmelblau/himmelblau.conf"
+POLICY_JSON = "/etc/containers/policy.json"
+VIEWS = ("falak", "mac", "windows")
+
+
+class EnrollError(Exception):
+    pass
+
+
+class Runner:
+    """Runs commands, or only prints them in --dry-run mode."""
+
+    def __init__(self, dry_run):
+        self.dry_run = dry_run
+
+    def run(self, cmd, stdin_text=None, check=True):
+        shown = " ".join(cmd)
+        if self.dry_run:
+            print(f"[dry-run] {shown}")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        print(f"+ {shown}")
+        result = subprocess.run(cmd, input=stdin_text, text=True, capture_output=True)
+        if check and result.returncode != 0:
+            raise EnrollError(f"'{shown}' failed:\n{(result.stderr or result.stdout).strip()}")
+        return result
+
+    def write(self, path, content, mode=0o644):
+        if self.dry_run:
+            lines = content.rstrip("\n").splitlines()
+            shown = "\n".join(lines[:12]) + (f"\n... ({len(lines) - 12} more lines)" if len(lines) > 12 else "")
+            print(f"[dry-run] write {path} (mode {oct(mode)}):\n{shown}")
+            return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f"{path}.falak-tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+        print(f"+ wrote {path}")
+
+
+# ------------------------------------------------------------------ config
+
+def load_config(source):
+    if re.match(r"^https?://", source):
+        if not source.startswith("https://"):
+            raise EnrollError("Use an https:// address for the company config.")
+        with urllib.request.urlopen(source, timeout=30) as response:
+            raw = response.read().decode("utf-8")
+    else:
+        with open(source, encoding="utf-8") as handle:
+            raw = handle.read()
+    try:
+        config = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise EnrollError(f"The company config is not valid JSON: {err}") from err
+    validate_config(config)
+    return config
+
+
+def validate_config(config):
+    identity = config.get("identity") or {}
+    kind = identity.get("type")
+    if kind not in ("ad", "ipa", "entra"):
+        raise EnrollError("identity.type must be 'ad', 'ipa' or 'entra'.")
+    if not identity.get("domain"):
+        raise EnrollError("identity.domain is required.")
+    profiles = config.get("profiles") or []
+    if not profiles:
+        raise EnrollError("The config needs at least one profile.")
+    ids = [p.get("id") for p in profiles]
+    if any(not i for i in ids) or len(set(ids)) != len(ids):
+        raise EnrollError("Every profile needs a unique 'id'.")
+    for profile in profiles:
+        appearance = profile.get("appearance") or {}
+        for key in ("default", "locked"):
+            value = appearance.get(key, "")
+            if value and value not in VIEWS:
+                raise EnrollError(f"Profile '{profile['id']}': appearance.{key} must be one of {VIEWS}.")
+
+
+# ------------------------------------------------------------------ prompts
+
+def gui_available():
+    return bool(shutil.which("kdialog")) and bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def choose_profile(config, wanted, use_gui):
+    profiles = config["profiles"]
+    if wanted:
+        for profile in profiles:
+            if profile["id"] == wanted:
+                return profile
+        raise EnrollError(f"No profile with id '{wanted}'. Options: {', '.join(p['id'] for p in profiles)}")
+    if len(profiles) == 1:
+        return profiles[0]
+
+    if use_gui:
+        args = ["kdialog", "--title", f"FalakOS: {config.get('organization', 'Company')}",
+                "--radiolist", "Choose this computer's profile:"]
+        for i, profile in enumerate(profiles):
+            label = f"{profile.get('name', profile['id'])}: {profile.get('description', '')}".strip(": ")
+            args += [profile["id"], label, "on" if i == 0 else "off"]
+        picked = subprocess.run(args, text=True, capture_output=True).stdout.strip()
+        if not picked:
+            raise EnrollError("No profile chosen. Nothing was changed.")
+        return choose_profile(config, picked, False)
+
+    print(f"\nProfiles for {config.get('organization', 'this company')}:")
+    for i, profile in enumerate(profiles, 1):
+        print(f"  {i}) {profile.get('name', profile['id'])}  {profile.get('description', '')}")
+    while True:
+        answer = input(f"Pick a profile [1-{len(profiles)}]: ").strip()
+        if answer.isdigit() and 1 <= int(answer) <= len(profiles):
+            return profiles[int(answer) - 1]
+
+
+def ask_secret(prompt, use_gui):
+    if use_gui:
+        result = subprocess.run(["kdialog", "--title", "FalakOS", "--password", prompt], text=True, capture_output=True)
+        return result.stdout.rstrip("\n")
+    return getpass.getpass(f"{prompt}: ")
+
+
+def ask_text(prompt, use_gui):
+    if use_gui:
+        result = subprocess.run(["kdialog", "--title", "FalakOS", "--inputbox", prompt], text=True, capture_output=True)
+        return result.stdout.strip()
+    return input(f"{prompt}: ").strip()
+
+
+# ------------------------------------------------------------------ directory join
+
+def already_joined(domain):
+    try:
+        result = subprocess.run(["realm", "list", "--name-only"], text=True, capture_output=True)
+    except OSError as err:
+        raise EnrollError("realmd isn't available. Use the FalakOS Corporate image.") from err
+    return domain.lower() in [line.strip().lower() for line in result.stdout.splitlines()]
+
+
+def join_realm(runner, identity, args, use_gui):
+    domain = identity["domain"]
+    if not runner.dry_run and already_joined(domain):
+        print(f"Already joined to {domain}; skipping the join.")
+        return
+
+    cmd = ["realm", "join", "--verbose"]
+    if identity["type"] == "ad" and identity.get("computer_ou"):
+        cmd.append(f"--computer-ou={identity['computer_ou']}")
+
+    otp = args.one_time_password or os.environ.get("FALAK_JOIN_OTP", "")
+    if otp:
+        cmd += [f"--one-time-password={otp}", domain]
+        runner.run(cmd)
+        return
+
+    user = args.join_user or ask_text(f"Account allowed to join computers to {domain}", use_gui)
+    if not user:
+        raise EnrollError("A join account (or --one-time-password) is required.")
+    password = os.environ.get("FALAK_JOIN_PASSWORD") or ask_secret(f"Password for {user}", use_gui)
+    # realm reads the password from stdin when it isn't a terminal, so it never
+    # appears in the process list or the logs.
+    cmd += [f"--user={user}", domain]
+    runner.run(cmd, stdin_text=password + "\n")
+
+
+def allow_groups(runner, identity):
+    groups = identity.get("allowed_groups") or []
+    if groups:
+        runner.run(["realm", "permit", "--groups", *groups])
+    else:
+        runner.run(["realm", "permit", "--all"])
+
+
+def use_short_usernames(runner, domain):
+    """Let people type 'sara' instead of 'sara@corp.example.com'."""
+    if runner.dry_run:
+        print(f"[dry-run] set use_fully_qualified_names = False in {SSSD_CONF}")
+        return
+    parser = configparser.RawConfigParser()
+    parser.optionxform = str
+    parser.read(SSSD_CONF, encoding="utf-8")
+    section = f"domain/{domain}"
+    if not parser.has_section(section):
+        matches = [s for s in parser.sections() if s.lower() == section.lower()]
+        if not matches:
+            print(f"Warning: [{section}] not found in {SSSD_CONF}; keeping full usernames.")
+            return
+        section = matches[0]
+    parser.set(section, "use_fully_qualified_names", "False")
+    parser.set(section, "fallback_homedir", "/home/%u")
+    with open(SSSD_CONF, "w", encoding="utf-8") as handle:
+        parser.write(handle)
+    os.chmod(SSSD_CONF, 0o600)
+    runner.run(["systemctl", "restart", "sssd.service"])
+
+
+def grant_sudo(runner, groups, domain, short_names):
+    if not groups:
+        return
+    lines = ["# Written by falak-enroll: company admin groups get sudo."]
+    for group in groups:
+        name = group.lower() if short_names else f"{group.lower()}@{domain.lower()}"
+        lines.append(f"%{name.replace(' ', chr(92) + ' ')} ALL=(ALL) ALL")
+    content = "\n".join(lines) + "\n"
+    runner.write(SUDOERS_FILE, content, mode=0o440)
+    if not runner.dry_run:
+        check = subprocess.run(["visudo", "-cf", SUDOERS_FILE], text=True, capture_output=True)
+        if check.returncode != 0:
+            os.remove(SUDOERS_FILE)
+            raise EnrollError(f"Generated sudoers file was invalid and was removed:\n{check.stdout}{check.stderr}")
+
+
+def enroll_directory(runner, identity, profile, args, use_gui):
+    join_realm(runner, identity, args, use_gui)
+    allow_groups(runner, identity)
+    short_names = bool(identity.get("short_usernames"))
+    if short_names:
+        use_short_usernames(runner, identity["domain"])
+    runner.run(["authselect", "select", "sssd", "with-mkhomedir", "--force"])
+    runner.run(["systemctl", "enable", "--now", "oddjobd.service"])
+    admins = profile.get("admin_groups") or identity.get("admin_groups") or []
+    grant_sudo(runner, admins, identity["domain"], short_names)
+
+
+def enroll_entra(runner, identity):
+    if not (shutil.which("himmelblaud") or os.path.exists("/usr/sbin/himmelblaud")):
+        raise EnrollError(
+            "Microsoft Entra ID login needs Himmelblau, which isn't installed in this image yet.\n"
+            "Add the Himmelblau RPMs to the corporate image (see the FalakOS README), rebuild, then run this again."
+        )
+    lines = ["# Written by falak-enroll.", "[global]", f"domains = {identity['domain']}"]
+    allowed = identity.get("allowed_groups") or []
+    if allowed:
+        lines.append(f"pam_allow_groups = {','.join(allowed)}")
+    if os.path.exists(HIMMELBLAU_CONF) and not runner.dry_run:
+        shutil.copy2(HIMMELBLAU_CONF, HIMMELBLAU_CONF + ".falak-bak")
+    runner.write(HIMMELBLAU_CONF, "\n".join(lines) + "\n")
+    runner.run(["authselect", "select", "himmelblau", "--force"])
+    runner.run(["systemctl", "enable", "--now", "himmelblaud.service", "himmelblaud-tasks.service"])
+
+
+# ------------------------------------------------------------------ appearance + image
+
+def write_appearance_policy(runner, profile):
+    appearance = profile.get("appearance") or {}
+    content = (
+        "# Written by falak-enroll from the company profile.\n"
+        "[appearance]\n"
+        f"default = {appearance.get('default') or 'falak'}\n"
+        f"locked = {appearance.get('locked') or ''}\n"
+    )
+    runner.write(APPEARANCE_CONF, content)
+
+
+def booted_image():
+    try:
+        result = subprocess.run(["rpm-ostree", "status", "--json", "--booted"], text=True, capture_output=True)
+    except OSError:
+        return ""
+    if result.returncode != 0:
+        return ""
+    try:
+        deployments = json.loads(result.stdout).get("deployments", [])
+    except json.JSONDecodeError:
+        return ""
+    ref = deployments[0].get("container-image-reference", "") if deployments else ""
+    return ref.split(":", 1)[-1].replace("docker://", "") if ref else ""
+
+
+def strip_tag(image):
+    last = image.rsplit("/", 1)[-1]
+    return image.rsplit(":", 1)[0] if ":" in last else image
+
+
+def trust_image_key(runner, image, key_source):
+    """Trust the IT team's signing key for their image repository."""
+    repo = strip_tag(image)
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", repo)
+    key_path = f"/etc/pki/containers/falak-org-{safe}.pub"
+    if runner.dry_run:
+        print(f"[dry-run] trust signing key from {key_source[:60]} for {repo} ({key_path})")
+        print(f"[dry-run] add sigstoreSigned rule for {repo} to {POLICY_JSON}")
+        return
+    if re.match(r"^https://", key_source):
+        with urllib.request.urlopen(key_source, timeout=30) as response:
+            key = response.read().decode("utf-8")
+    else:
+        key = key_source
+    if "BEGIN PUBLIC KEY" not in key:
+        raise EnrollError("image_signing_key must be a cosign public key (PEM) or an https:// link to one.")
+    runner.write(key_path, key.strip() + "\n")
+
+    with open(POLICY_JSON, encoding="utf-8") as handle:
+        policy = json.load(handle)
+    docker = policy.setdefault("transports", {}).setdefault("docker", {})
+    docker[repo] = [{
+        "type": "sigstoreSigned",
+        "keyPath": key_path,
+        "signedIdentity": {"type": "matchRepository"},
+    }]
+    runner.write(POLICY_JSON, json.dumps(policy, indent=4) + "\n")
+
+    registries = f"docker:\n  {repo}:\n    use-sigstore-attachments: true\n"
+    runner.write(f"/etc/containers/registries.d/falak-org-{safe}.yaml", registries)
+
+
+def switch_image(runner, profile, args):
+    image = (profile.get("image") or "").strip()
+    if not image:
+        return False
+    if strip_tag(booted_image()) == strip_tag(image):
+        print("This machine already runs the profile's image.")
+        return False
+    if args.no_rebase:
+        print(f"Skipping the image switch (--no-rebase). Profile image: {image}")
+        return False
+
+    key = profile.get("image_signing_key") or ""
+    if key:
+        trust_image_key(runner, image, key)
+        runner.run(["rpm-ostree", "rebase", f"ostree-image-signed:docker://{image}"])
+    elif args.allow_unsigned:
+        print("Warning: switching to an UNSIGNED image because --allow-unsigned was given.")
+        runner.run(["rpm-ostree", "rebase", f"ostree-unverified-registry:{image}"])
+    else:
+        raise EnrollError(
+            f"Profile '{profile['id']}' points to {image} but has no image_signing_key.\n"
+            "Add the IT team's cosign public key to the profile, or pass --allow-unsigned (not recommended)."
+        )
+    return True
+
+
+# ------------------------------------------------------------------ main
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="falak-enroll", description="Join this FalakOS Corporate machine to a company.")
+    parser.add_argument("--config", required=True, help="company config: https:// link or file path")
+    parser.add_argument("--profile", help="profile id to use (skips the question)")
+    parser.add_argument("--join-user", help="account allowed to join computers (AD/IPA)")
+    parser.add_argument("--one-time-password", help="one-time join password pre-created by IT (AD)")
+    parser.add_argument("--no-rebase", action="store_true", help="don't switch to the profile's image")
+    parser.add_argument("--allow-unsigned", action="store_true", help="allow switching to an unsigned profile image")
+    parser.add_argument("--gui", action="store_true", help="ask questions with dialogs instead of the terminal")
+    parser.add_argument("--dry-run", action="store_true", help="show what would happen without changing anything")
+    args = parser.parse_args(argv)
+
+    if os.geteuid() != 0 and not args.dry_run:
+        print("falak-enroll: run with sudo.", file=sys.stderr)
+        return 1
+
+    runner = Runner(args.dry_run)
+    use_gui = args.gui and gui_available()
+    try:
+        config = load_config(args.config)
+        identity = config["identity"]
+        profile = choose_profile(config, args.profile, use_gui)
+        print(f"\nEnrolling into {config.get('organization', identity['domain'])}, profile '{profile['id']}'.\n")
+
+        if identity["type"] == "entra":
+            enroll_entra(runner, identity)
+        else:
+            enroll_directory(runner, identity, profile, args, use_gui)
+
+        write_appearance_policy(runner, profile)
+        runner.write(f"{FALAK_ETC}/org.json", json.dumps(config, indent=2, ensure_ascii=False) + "\n", mode=0o644)
+        runner.write(f"{FALAK_ETC}/profile", profile["id"] + "\n")
+
+        rebased = switch_image(runner, profile, args)
+    except EnrollError as err:
+        print(f"\nfalak-enroll: {err}", file=sys.stderr)
+        return 1
+    except (OSError, urllib.error.URLError) as err:
+        print(f"\nfalak-enroll: {err}", file=sys.stderr)
+        return 1
+
+    print("\nDone. This computer is enrolled.")
+    if rebased:
+        print("Restart to finish switching to the profile's image: systemctl reboot")
+    else:
+        print("Employees can now sign in at the login screen with their company account.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

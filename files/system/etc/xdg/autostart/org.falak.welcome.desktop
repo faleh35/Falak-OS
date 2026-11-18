@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=FalakOS Welcome
+Name[ar]=مرحبًا بك في FalakOS
+Comment=Pick your desktop view on first login
+Comment[ar]=اختر شكل سطح المكتب عند أول تسجيل دخول
+Exec=/usr/bin/falak-welcome
+Icon=falak-logo
+OnlyShowIn=KDE;
+NoDisplay=true
+X-KDE-autostart-phase=2

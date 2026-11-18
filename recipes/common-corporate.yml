@@ -1,0 +1,33 @@
+---
+# yaml-language-server: $schema=https://schema.blue-build.org/module-list-v1.json
+# Corporate layer: company directory login + IT enrollment.
+modules:
+  # Active Directory / FreeIPA / Samba AD login (realmd + SSSD).
+  - type: dnf
+    install:
+      packages:
+        - realmd
+        - sssd
+        - sssd-ad
+        - sssd-ipa
+        - adcli
+        - samba-common-tools
+        - oddjob
+        - oddjob-mkhomedir
+        - krb5-workstation
+        - authselect
+
+  # falak-enroll + the example organization config.
+  - type: files
+    files:
+      - source: corporate
+        destination: /
+
+  - type: script
+    snippets:
+      - "chmod 0755 /usr/bin/falak-enroll"
+
+  - type: systemd
+    system:
+      enabled:
+        - oddjobd.service # creates home folders on first domain login

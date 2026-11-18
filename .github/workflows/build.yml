@@ -1,0 +1,42 @@
+name: build-falakos
+on:
+  schedule:
+    - cron: "00 07 * * *" # daily at 07:00 UTC, after the Universal Blue images rebuild
+  push:
+    paths-ignore:
+      - "**.md"
+  pull_request:
+  workflow_dispatch: # lets you start a build by hand from the Actions tab
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  bluebuild:
+    name: Build ${{ matrix.recipe }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false # one edition failing doesn't stop the others
+      matrix:
+        recipe:
+          - falakos-gaming.yml
+          - falakos-gaming-nvidia.yml
+          - falakos-business.yml
+          - falakos-corporate.yml
+          - falakos-full.yml
+          - falakos-full-nvidia.yml
+          - falakos-free.yml
+    steps:
+      - name: Build FalakOS image
+        uses: blue-build/github-action@v1.13
+        with:
+          recipe: ${{ matrix.recipe }}
+          cosign_private_key: ${{ secrets.SIGNING_SECRET }}
+          registry_token: ${{ github.token }}
+          pr_event_number: ${{ github.event.number }}
+          maximize_build_space: true

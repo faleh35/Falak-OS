@@ -1,0 +1,16 @@
+---
+# yaml-language-server: $schema=https://schema.blue-build.org/module-list-v1.json
+# Extra creative and developer apps for the Full edition.
+modules:
+  - type: default-flatpaks
+    configurations:
+      - scope: system
+        notify: true
+        install:
+          - org.videolan.VLC
+          - com.obsproject.Studio
+          - org.kde.kdenlive
+          - org.gimp.GIMP
+          - org.inkscape.Inkscape
+          - com.vscodium.codium
+          - org.libreoffice.LibreOffice

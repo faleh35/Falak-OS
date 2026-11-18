@@ -1,0 +1,5 @@
+# Applied together with this view's panel layout.
+# Window buttons: X=close  I=minimize  A=maximize  M=window menu
+[kwinrc][org.kde.kdecoration2]
+ButtonsOnLeft=XIA
+ButtonsOnRight=

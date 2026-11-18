@@ -1,0 +1,19 @@
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "FalakOS Project"
+            }
+        ],
+        "Category": "",
+        "Description": "Falak's own look: one floating bar with menu, workspaces, apps, tray and clock.",
+        "Description[ar]": "شكل فلك الخاص: شريط عائم واحد فيه القائمة ومساحات العمل والتطبيقات والساعة.",
+        "Id": "org.falak.native.desktop",
+        "License": "Apache-2.0",
+        "Name": "Falak",
+        "Name[ar]": "فلك",
+        "Version": "0.1",
+        "Website": "https://github.com/faleh35/Falak-OS"
+    }
+}

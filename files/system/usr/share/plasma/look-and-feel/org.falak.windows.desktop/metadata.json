@@ -1,0 +1,19 @@
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "FalakOS Project"
+            }
+        ],
+        "Category": "",
+        "Description": "A full taskbar with a centered Start menu, and window buttons on the right.",
+        "Description[ar]": "شريط مهام كامل مع قائمة ابدأ في المنتصف، وأزرار النوافذ على اليمين.",
+        "Id": "org.falak.windows.desktop",
+        "License": "Apache-2.0",
+        "Name": "Falak: Windows-like",
+        "Name[ar]": "فلك: على طريقة ويندوز",
+        "Version": "0.1",
+        "Website": "https://github.com/faleh35/Falak-OS"
+    }
+}

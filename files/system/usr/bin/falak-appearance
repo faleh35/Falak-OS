@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+"""falak-appearance: switch between the three FalakOS desktop views.
+
+  falak-appearance list                 show the views (current one marked)
+  falak-appearance current              print the current view
+  falak-appearance apply VIEW           switch to VIEW: falak | mac | windows
+  falak-appearance policy [--get KEY]   show the IT policy from /etc/falak/appearance.conf
+
+Run it as the logged-in user (not root). Pinned apps are kept when switching.
+"""
+
+import argparse
+import configparser
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+VIEWS = {
+    "falak": {
+        "package": "org.falak.native.desktop",
+        "title": "Falak",
+        "title_ar": "فلك",
+        "buttons": ("M", "IAX"),
+    },
+    "mac": {
+        "package": "org.falak.mac.desktop",
+        "title": "Mac-like",
+        "title_ar": "على طريقة ماك",
+        "buttons": ("XIA", ""),
+    },
+    "windows": {
+        "package": "org.falak.windows.desktop",
+        "title": "Windows-like",
+        "title_ar": "على طريقة ويندوز",
+        "buttons": ("M", "IAX"),
+    },
+}
+
+ALIASES = {
+    "native": "falak",
+    "linux": "falak",
+    "macos": "mac",
+    "mac-like": "mac",
+    "win": "windows",
+    "windows-like": "windows",
+}
+
+TASK_PLUGINS = ("org.kde.plasma.icontasks", "org.kde.plasma.taskmanager")
+
+SYSTEM_POLICY = "/etc/falak/appearance.conf"
+CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+USER_STATE = os.path.join(CONFIG_HOME, "falak", "appearance.conf")
+APPLETSRC = os.path.join(CONFIG_HOME, "plasma-org.kde.plasma.desktop-appletsrc")
+
+
+class FalakError(Exception):
+    pass
+
+
+def resolve_view(name):
+    key = (name or "").strip().lower()
+    key = ALIASES.get(key, key)
+    if key not in VIEWS:
+        raise FalakError(f"Unknown view '{name}'. Choose one of: {', '.join(VIEWS)}")
+    return key
+
+
+# ---------------------------------------------------------------- policy/state
+
+def read_policy():
+    """IT policy. default = view preselected on first login, locked = forced view."""
+    policy = {"default": "falak", "locked": ""}
+    parser = configparser.ConfigParser()
+    try:
+        parser.read(SYSTEM_POLICY, encoding="utf-8")
+    except configparser.Error as err:
+        print(f"falak-appearance: ignoring unreadable {SYSTEM_POLICY}: {err}", file=sys.stderr)
+        return policy
+    if parser.has_section("appearance"):
+        for key in policy:
+            value = parser.get("appearance", key, fallback=policy[key]).strip()
+            if value:
+                try:
+                    value = resolve_view(value)
+                except FalakError:
+                    print(f"falak-appearance: bad '{key}' value in policy: {value}", file=sys.stderr)
+                    continue
+            policy[key] = value
+    return policy
+
+
+def read_state():
+    parser = configparser.ConfigParser()
+    parser.read(USER_STATE, encoding="utf-8")
+    return parser.get("appearance", "view", fallback="")
+
+
+def write_state(view):
+    os.makedirs(os.path.dirname(USER_STATE), exist_ok=True)
+    parser = configparser.ConfigParser()
+    parser["appearance"] = {"view": view}
+    with open(USER_STATE, "w", encoding="utf-8") as handle:
+        parser.write(handle)
+
+
+# ---------------------------------------------------------------- pinned apps
+
+def split_kde_list(value):
+    """KConfig lists are comma separated; commas inside entries are escaped as '\\,'."""
+    parts = re.split(r"(?<!\\),", value)
+    return [p.replace("\\,", ",").strip() for p in parts if p.strip()]
+
+
+def read_pinned_apps(path=APPLETSRC):
+    """Return the launchers pinned in the current task manager, or None."""
+    if not os.path.exists(path):
+        return None
+    groups = {}
+    current = None
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for raw in handle:
+            line = raw.rstrip("\n")
+            if line.startswith("[") and line.endswith("]"):
+                current = line
+                groups.setdefault(current, {})
+            elif current is not None and "=" in line and not line.lstrip().startswith("#"):
+                key, value = line.split("=", 1)
+                key = re.sub(r"\[\$[a-z]+\]$", "", key.strip())  # drop [$e] style flags
+                groups[current][key] = value
+    for group, entries in groups.items():
+        if entries.get("plugin") in TASK_PLUGINS:
+            launchers = groups.get(group + "[Configuration][General]", {}).get("launchers")
+            if launchers:
+                return split_kde_list(launchers)
+    return None
+
+
+# ---------------------------------------------------------------- D-Bus helpers
+
+def run(cmd, check=True, capture=True):
+    result = subprocess.run(cmd, text=True, capture_output=capture)
+    if check and result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise FalakError(f"Command failed: {' '.join(cmd)}\n{detail}")
+    return result
+
+
+def name_on_bus(name):
+    result = run(
+        ["gdbus", "call", "--session", "--dest", "org.freedesktop.DBus",
+         "--object-path", "/org/freedesktop/DBus",
+         "--method", "org.freedesktop.DBus.NameHasOwner", name],
+        check=False,
+    )
+    return result.returncode == 0 and "true" in result.stdout
+
+
+def wait_for_plasmashell(timeout=30):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if name_on_bus("org.kde.plasmashell"):
+            return
+        time.sleep(1)
+    raise FalakError("Plasma is not running. Run this from inside your desktop session.")
+
+
+def plasma_script(script):
+    """Run a Plasma desktop script and return what it print()ed."""
+    result = run(
+        ["gdbus", "call", "--session", "--dest", "org.kde.plasmashell",
+         "--object-path", "/PlasmaShell",
+         "--method", "org.kde.PlasmaShell.evaluateScript", script],
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    match = re.match(r"^\('(.*)',\)\s*$", result.stdout.strip(), re.S)
+    return match.group(1) if match else result.stdout.strip()
+
+
+def count_task_managers():
+    plugins = json.dumps(list(TASK_PLUGINS))
+    output = plasma_script(
+        "var n = 0; var types = %s;"
+        "panels().forEach(function (p) {"
+        "  p.widgets().forEach(function (w) { if (types.indexOf(w.type) !== -1) { n++; } });"
+        "});"
+        "print(n);" % plugins
+    )
+    try:
+        return int((output or "0").strip())
+    except ValueError:
+        return 0
+
+
+def restore_pinned_apps(launchers, timeout=15):
+    """Plasma rebuilds panels asynchronously after a layout reset: wait, then re-pin."""
+    deadline = time.time() + timeout
+    while time.time() < deadline and count_task_managers() == 0:
+        time.sleep(0.5)
+    plugins = json.dumps(list(TASK_PLUGINS))
+    plasma_script(
+        "var launchers = %s; var types = %s;"
+        "panels().forEach(function (p) {"
+        "  p.widgets().forEach(function (w) {"
+        "    if (types.indexOf(w.type) !== -1) {"
+        "      w.currentConfigGroup = ['General'];"
+        "      w.writeConfig('launchers', launchers);"
+        "      w.reloadConfig();"
+        "    }"
+        "  });"
+        "});" % (json.dumps(launchers), plugins)
+    )
+
+
+def set_window_buttons(left, right):
+    tool = shutil.which("kwriteconfig6") or shutil.which("kwriteconfig5")
+    if not tool:
+        print("falak-appearance: kwriteconfig6 not found; window buttons unchanged", file=sys.stderr)
+        return
+    for key, value in (("ButtonsOnLeft", left), ("ButtonsOnRight", right)):
+        run([tool, "--file", "kwinrc", "--group", "org.kde.kdecoration2", "--key", key, value])
+    run(
+        ["gdbus", "call", "--session", "--dest", "org.kde.KWin", "--object-path", "/KWin",
+         "--method", "org.kde.KWin.reconfigure"],
+        check=False,
+    )
+
+
+def apply_global_theme(package):
+    tool = shutil.which("plasma-apply-lookandfeel") or shutil.which("lookandfeeltool")
+    if tool:
+        run([tool, "--apply", package, "--resetLayout"])
+        return
+    # Fallback: ask plasmashell directly to load the layout.
+    run(
+        ["gdbus", "call", "--session", "--dest", "org.kde.plasmashell",
+         "--object-path", "/PlasmaShell",
+         "--method", "org.kde.PlasmaShell.loadLookAndFeelDefaultLayout", package]
+    )
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_list(_args):
+    current = read_state()
+    for key, view in VIEWS.items():
+        mark = "*" if key == current else " "
+        print(f"{mark} {key:8} {view['title']}  /  {view['title_ar']}")
+    return 0
+
+
+def cmd_current(_args):
+    print(read_state() or "unknown")
+    return 0
+
+
+def cmd_policy(args):
+    policy = read_policy()
+    if args.get:
+        print(policy.get(args.get, ""))
+    else:
+        for key, value in policy.items():
+            print(f"{key}={value}")
+    return 0
+
+
+def cmd_apply(args):
+    if os.geteuid() == 0:
+        raise FalakError("Run falak-appearance as your normal user, not with sudo.")
+
+    view = resolve_view(args.view)
+    policy = read_policy()
+    if policy["locked"] and view != policy["locked"]:
+        raise FalakError(
+            f"Your organization has set the desktop view to '{policy['locked']}'. "
+            "Ask your IT team to change it."
+        )
+
+    info = VIEWS[view]
+    pinned = None if args.no_keep_pins else read_pinned_apps()
+
+    wait_for_plasmashell()
+    print(f"Switching to the {info['title']} view...")
+    apply_global_theme(info["package"])
+    set_window_buttons(*info["buttons"])
+
+    if pinned:
+        restore_pinned_apps(pinned)
+
+    write_state(view)
+    print(f"Done: {info['title']} view is active.")
+    return 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="falak-appearance", description="Switch FalakOS desktop views.")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("list", help="show the available views").set_defaults(func=cmd_list)
+    sub.add_parser("current", help="print the current view").set_defaults(func=cmd_current)
+
+    p_policy = sub.add_parser("policy", help="show the IT policy")
+    p_policy.add_argument("--get", choices=["default", "locked"])
+    p_policy.set_defaults(func=cmd_policy)
+
+    p_apply = sub.add_parser("apply", help="switch to a view")
+    p_apply.add_argument("view", help="falak | mac | windows")
+    p_apply.add_argument("--no-keep-pins", action="store_true", help="use the view's default pinned apps")
+    p_apply.set_defaults(func=cmd_apply)
+
+    args = parser.parse_args(argv)
+    try:
+        return args.func(args)
+    except FalakError as err:
+        print(f"falak-appearance: {err}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

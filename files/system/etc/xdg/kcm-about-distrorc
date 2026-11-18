@@ -1,0 +1,5 @@
+[General]
+Name=FalakOS
+LogoPath=/usr/share/pixmaps/falak-logo.svg
+Website=https://github.com/faleh35/Falak-OS
+UseOSReleaseVersion=true

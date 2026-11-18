@@ -1,0 +1,19 @@
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "FalakOS Project"
+            }
+        ],
+        "Category": "",
+        "Description": "Top bar with the app menu, a floating dock, and window buttons on the left.",
+        "Description[ar]": "شريط علوي فيه قائمة التطبيق، ورصيف عائم، وأزرار النوافذ على اليسار.",
+        "Id": "org.falak.mac.desktop",
+        "License": "Apache-2.0",
+        "Name": "Falak: Mac-like",
+        "Name[ar]": "فلك: على طريقة ماك",
+        "Version": "0.1",
+        "Website": "https://github.com/faleh35/Falak-OS"
+    }
+}

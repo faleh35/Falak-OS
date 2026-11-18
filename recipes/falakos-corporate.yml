@@ -1,0 +1,29 @@
+---
+# yaml-language-server: $schema=https://schema.blue-build.org/recipe-v1.json
+# Published as ghcr.io/faleh35/falakos-corporate
+name: falakos-corporate
+description: "FalakOS Corporate: company login, IT enrollment and profiles."
+
+base-image: ghcr.io/ublue-os/kinoite-main
+image-version: latest
+
+modules:
+  - from-file: common-base.yml
+  - from-file: common-business.yml
+  - from-file: common-corporate.yml
+
+  - type: os-release
+    properties:
+      NAME: FalakOS
+      PRETTY_NAME: FalakOS Corporate
+      VARIANT: Corporate
+      VARIANT_ID: corporate
+      LOGO: falak-logo
+      HOME_URL: https://github.com/faleh35/Falak-OS
+
+  - type: script
+    snippets:
+      - "mkdir -p /usr/share/falak && echo corporate > /usr/share/falak/edition"
+
+  # Must stay last: installs the signing policy for this image.
+  - type: signing

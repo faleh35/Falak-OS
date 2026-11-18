@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "FalakOS Project"
+            }
+        ],
+        "Id": "Falak",
+        "License": "CC-BY-SA-4.0",
+        "Name": "Falak",
+        "Name[ar]": "فلك"
+    }
+}

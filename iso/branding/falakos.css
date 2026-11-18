@@ -1,0 +1,29 @@
+/* FalakOS installer theme.
+ * Loaded by Anaconda through custom_stylesheet (see 90-falakos.conf).
+ * It overrides the sidebar and top bar of the installer with FalakOS colors and logo.
+ */
+
+/* Left sidebar on the main screen: night-sky background */
+.logo-sidebar {
+    background-image: url('/usr/share/anaconda/pixmaps/falakos/sidebar-bg.png');
+    background-color: #0A0E26;
+    background-repeat: no-repeat;
+    background-size: cover;
+}
+
+/* FalakOS logo and name at the top of the sidebar */
+.logo {
+    background-image: url('/usr/share/anaconda/pixmaps/falakos/sidebar-logo.png');
+    background-position: 50% 24px;
+    background-repeat: no-repeat;
+    background-color: transparent;
+}
+
+/* Top bar on every settings screen */
+AnacondaSpokeWindow #nav-box {
+    background-color: #0A0E26;
+    background-image: url('/usr/share/anaconda/pixmaps/falakos/topbar-bg.png');
+    background-repeat: no-repeat;
+    background-size: cover;
+    color: white;
+}

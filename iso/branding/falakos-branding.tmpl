@@ -1,0 +1,9 @@
+## FalakOS installer branding (a lorax runtime template).
+## Runs after the installer's packages are in place. Copies the FalakOS theme
+## from /falakos-branding (mounted by iso/build-iso.sh) into the installer.
+
+runcmd install -D -m 0644 /falakos-branding/pixmaps/sidebar-logo.png ${root}/usr/share/anaconda/pixmaps/falakos/sidebar-logo.png
+runcmd install -D -m 0644 /falakos-branding/pixmaps/sidebar-bg.png ${root}/usr/share/anaconda/pixmaps/falakos/sidebar-bg.png
+runcmd install -D -m 0644 /falakos-branding/pixmaps/topbar-bg.png ${root}/usr/share/anaconda/pixmaps/falakos/topbar-bg.png
+runcmd install -D -m 0644 /falakos-branding/falakos.css ${root}/usr/share/anaconda/pixmaps/falakos/falakos.css
+runcmd install -D -m 0644 /falakos-branding/90-falakos.conf ${root}/etc/anaconda/conf.d/90-falakos.conf

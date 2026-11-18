@@ -71,7 +71,11 @@ files/
     usr/bin/falak-enroll
     usr/share/falak/enroll/example-org.json
   scripts/falak-defaults.sh      build-time setup
+iso/
+  build-iso.sh           builds a branded installer ISO from a published image
+  branding/              installer name, logo, colors (Anaconda theme + lorax template)
 .github/workflows/build.yml      builds all editions every day and on every push
+.github/workflows/build-iso.yml  builds an installer ISO on demand
 ```
 
 ## Get it building (one time)
@@ -119,11 +123,12 @@ on, Bazzite-based editions ask you to enroll their key on first boot; follow the
 
 **Make an installer ISO on GitHub** (no Linux needed): *Actions → build-iso → Run workflow*,
 pick the edition, and download the ISO from the finished run (it's kept for 7 days).
-The edition's image must be public.
+The edition's image must be public. The installer carries the FalakOS name, logo and colors
+(see `iso/branding/`).
 
-Or on Linux / WSL2 with podman, as root:
+Or on Linux / WSL2 with docker or podman, as root:
 ```bash
-sudo bluebuild generate-iso --iso-name falakos-business.iso image ghcr.io/faleh35/falakos-business
+sudo iso/build-iso.sh falakos-business faleh35 ./output
 ```
 ISOs are larger than GitHub's 2 GB release limit, so host them elsewhere (SourceForge is common for distros).
 With Secure Boot on, the installer asks you to enroll a key on first boot; the password is `universalblue`.

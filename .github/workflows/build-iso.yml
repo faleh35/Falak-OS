@@ -1,5 +1,5 @@
 name: build-iso
-# Builds an installer ISO for one FalakOS edition, on demand.
+# Builds a branded FalakOS installer ISO for one edition, on demand.
 # Run it from the Actions tab: "build-iso" → "Run workflow" → pick the edition.
 # The ISO is attached to the finished run as a download (kept for 7 days).
 on:
@@ -27,27 +27,22 @@ jobs:
       contents: read
       packages: read
     steps:
+      - name: Get the FalakOS installer branding
+        uses: actions/checkout@v7.0.1
+
       # The installer build needs a lot of disk space.
       - name: Free up disk space
         uses: jlumbroso/free-disk-space@v1.3.2
         with:
           tool-cache: true
 
-      - name: Install the BlueBuild CLI
-        run: bash <(curl -fsSL https://raw.githubusercontent.com/blue-build/cli/v0.9.42/install.sh)
-
       - name: Build the installer ISO
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ inputs.edition }}:latest
-          ISO_NAME: ${{ inputs.edition }}.iso
+          EDITION: ${{ inputs.edition }}
+          OWNER: ${{ github.repository_owner }}
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/output"
-          sudo bluebuild generate-iso \
-            --iso-name "$ISO_NAME" \
-            --output-dir "$GITHUB_WORKSPACE/output" \
-            image "$IMAGE"
+          sudo bash iso/build-iso.sh "$EDITION" "$OWNER" "$GITHUB_WORKSPACE/output"
           sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE/output"
-          ls -lh "$GITHUB_WORKSPACE/output"
 
       - name: Upload the ISO
         uses: actions/upload-artifact@v7.0.2

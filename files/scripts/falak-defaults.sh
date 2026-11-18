@@ -28,12 +28,53 @@ set_default kdeglobals KDE LookAndFeelPackage org.falak.native.desktop
 set_default kwinrc Plugins magiclampEnabled true
 set_default kwinrc Plugins squashEnabled false
 
+# 2c) FalakOS loading screen between login and the desktop (all views).
+set_default ksplashrc KSplash Engine KSplashQML
+set_default ksplashrc KSplash Theme org.falak.native.desktop
+
+# 2d) Login screen wallpaper.
+FALAK_WALLPAPER_DIR=/usr/share/wallpapers/Falak
+FALAK_WALLPAPER_IMG="${FALAK_WALLPAPER_DIR}/contents/images_dark/3840x2160.jpg"
+if [[ -d /usr/lib/plasmalogin ]] || command -v plasmalogin >/dev/null 2>&1; then
+    # Plasma Login Manager (Fedora 44 and newer).
+    if command -v kwriteconfig6 >/dev/null 2>&1; then
+        kwriteconfig6 --file /etc/plasmalogin.conf --group Greeter --key WallpaperPluginId org.kde.image
+        kwriteconfig6 --file /etc/plasmalogin.conf --group Greeter --group Wallpaper --group org.kde.image \
+            --group General --key Image "file://${FALAK_WALLPAPER_DIR}/"
+    fi
+fi
+for theme in /usr/share/sddm/themes/*breeze*; do
+    # SDDM, if this base still uses it.
+    if [[ -d "$theme" ]]; then
+        printf '[General]\nbackground=%s\n' "$FALAK_WALLPAPER_IMG" > "${theme}/theme.conf.user"
+    fi
+done
+
+# 2e) Name in the computer's firmware boot menu. bootupd names the EFI entry after the
+#     text before "release" in /etc/system-release ("Fedora release 45" -> "Fedora").
+FEDORA_VERSION="$(rpm -E %fedora 2>/dev/null || true)"
+if [[ "$FEDORA_VERSION" =~ ^[0-9]+$ ]]; then
+    rm -f /etc/system-release
+    printf 'FalakOS release %s\n' "$FEDORA_VERSION" > /etc/system-release
+fi
+
+# 2f) Bazzite builds its boot files with FIDO2 security-key unlock; keep that when the
+#     edition recipe rebuilds them (type: initramfs) for the FalakOS boot logo.
+if grep -qi bazzite /usr/share/ublue-os/image-info.json 2>/dev/null; then
+    mkdir -p /usr/lib/dracut/dracut.conf.d
+    echo 'add_dracutmodules+=" fido2 "' > /usr/lib/dracut/dracut.conf.d/90-falak-fido2.conf
+fi
+
 # 3) Sanity checks: fail the build early if a view package is missing.
 for view in native mac windows; do
     pkg="/usr/share/plasma/look-and-feel/org.falak.${view}.desktop"
     test -f "${pkg}/metadata.json" || { echo "Missing ${pkg}/metadata.json"; exit 1; }
     test -f "${pkg}/contents/layouts/org.kde.plasma.desktop-layout.js" || { echo "Missing layout for ${view}"; exit 1; }
 done
+
+# 3a) Boot logo and loading screen.
+test -f /usr/share/plymouth/themes/spinner/watermark.png || { echo "Missing FalakOS boot logo"; exit 1; }
+test -f /usr/share/plasma/look-and-feel/org.falak.native.desktop/contents/splash/Splash.qml || { echo "Missing FalakOS splash"; exit 1; }
 
 # 3a) The magnifying dock used by the Mac-like view.
 test -f /usr/share/plasma/plasmoids/com.github.mattanis.macosdock/metadata.json || { echo "Missing Falak Dock"; exit 1; }

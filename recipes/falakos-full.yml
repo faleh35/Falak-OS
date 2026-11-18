@@ -26,5 +26,8 @@ modules:
     snippets:
       - "mkdir -p /usr/share/falak && echo full > /usr/share/falak/edition"
 
+  # Rebuild the early-boot files so the FalakOS boot logo is used.
+  - type: initramfs
+
   # Must stay last: installs the signing policy for this image.
   - type: signing

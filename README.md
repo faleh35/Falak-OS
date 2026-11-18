@@ -64,6 +64,15 @@ falak-welcome --again             # show the picker again
 
 IT can preselect or lock the view in `/etc/falak/appearance.conf` (`default =` and `locked =`).
 
+### From power-on to desktop
+
+| Moment | What FalakOS shows |
+|---|---|
+| Firmware boot menu (F12 etc.) | "FalakOS" (from `/etc/system-release`; new installs) |
+| Boot splash | The computer maker's logo, a spinner, and the FalakOS logo at the bottom (`files/system/usr/share/plymouth/themes/spinner/watermark.png`; the `initramfs` step in each recipe builds it in) |
+| Login screen | The Falak wallpaper |
+| Loading the desktop | FalakOS splash: a planet with its moon on an orbit, the name, the tagline in English or Arabic, and a progress line (`org.falak.native.desktop/contents/splash/Splash.qml`) |
+
 ## What's in the box
 
 ```

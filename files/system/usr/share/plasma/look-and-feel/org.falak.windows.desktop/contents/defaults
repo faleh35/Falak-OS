@@ -21,4 +21,5 @@ library=org.kde.breeze
 theme=Breeze
 
 [ksplashrc][KSplash]
-Theme=org.kde.breeze.desktop
+Engine=KSplashQML
+Theme=org.falak.native.desktop

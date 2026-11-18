@@ -62,13 +62,15 @@ class FalakPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xE6141A3A),
+    // A Material (not a decorated box) so list tiles and buttons on it show their ink.
+    return Material(
+      color: const Color(0xE6141A3A),
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: FalakColors.panelBorder),
+        side: const BorderSide(color: FalakColors.panelBorder),
       ),
-      child: ClipRRect(borderRadius: BorderRadius.circular(18), child: child),
+      clipBehavior: Clip.antiAlias,
+      child: child,
     );
   }
 }

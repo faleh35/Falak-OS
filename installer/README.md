@@ -75,3 +75,4 @@ The GitHub Actions workflow `falakos-installer` checks, tests and builds the Lin
 
 - A **live ISO** that boots straight into this installer (built with Titanoboa). Until then, real installs go through the Anaconda-based ISO from `build-iso`.
 - Wi-Fi from the live session isn't carried over to the installed system yet.
+- Flutter 3.50 moved Material into the `material_ui` package. The installer still imports `package:flutter/material.dart` (a deprecation notice only), so it also builds with older Flutter versions.

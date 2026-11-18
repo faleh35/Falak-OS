@@ -4,7 +4,7 @@ import 'dart:io';
 import '../models.dart';
 import 'command_runner.dart';
 
-/// Default owner of the published FalakOS images (ghcr.io/<owner>/falakos-<edition>).
+/// Default owner of the published FalakOS images (`ghcr.io/<owner>/falakos-<edition>`).
 const String defaultImageOwner = 'faleh35';
 
 /// Facts about the machine and the edition being installed.

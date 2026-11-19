@@ -35,18 +35,18 @@ set_default ksplashrc KSplash Theme org.falak.native.desktop
 # 2d) Login screen wallpaper.
 FALAK_WALLPAPER_DIR=/usr/share/wallpapers/Falak
 FALAK_WALLPAPER_IMG="${FALAK_WALLPAPER_DIR}/contents/images_dark/3840x2160.jpg"
-if [[ -d /usr/lib/plasmalogin ]] || command -v plasmalogin >/dev/null 2>&1; then
-    # Plasma Login Manager (Fedora 44 and newer).
-    if command -v kwriteconfig6 >/dev/null 2>&1; then
-        kwriteconfig6 --file /etc/plasmalogin.conf --group Greeter --key WallpaperPluginId org.kde.image
-        kwriteconfig6 --file /etc/plasmalogin.conf --group Greeter --group Wallpaper --group org.kde.image \
-            --group General --key Image "file://${FALAK_WALLPAPER_DIR}/"
-    fi
+# Plasma Login Manager (Fedora 44 and newer). Written even if it isn't installed: unused then.
+if command -v kwriteconfig6 >/dev/null 2>&1; then
+    kwriteconfig6 --file /etc/plasmalogin.conf --group Greeter --key WallpaperPluginId org.kde.image
+    kwriteconfig6 --file /etc/plasmalogin.conf --group Greeter --group Wallpaper --group org.kde.image \
+        --group General --key Image "file://${FALAK_WALLPAPER_DIR}/"
+    echo "Login screen (Plasma Login Manager): Falak wallpaper set$(rpm -q plasma-login-manager >/dev/null 2>&1 && echo ', installed' || echo ', not installed')"
 fi
 for theme in /usr/share/sddm/themes/*breeze*; do
     # SDDM, if this base still uses it.
     if [[ -d "$theme" ]]; then
         printf '[General]\nbackground=%s\n' "$FALAK_WALLPAPER_IMG" > "${theme}/theme.conf.user"
+        echo "Login screen (SDDM ${theme##*/}): Falak wallpaper set"
     fi
 done
 
@@ -56,6 +56,7 @@ FEDORA_VERSION="$(rpm -E %fedora 2>/dev/null || true)"
 if [[ "$FEDORA_VERSION" =~ ^[0-9]+$ ]]; then
     rm -f /etc/system-release
     printf 'FalakOS release %s\n' "$FEDORA_VERSION" > /etc/system-release
+    echo "Firmware boot entry name: $(cat /etc/system-release)"
 fi
 
 # 2f) Bazzite builds its boot files with FIDO2 security-key unlock; keep that when the
